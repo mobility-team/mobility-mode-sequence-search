@@ -1,11 +1,61 @@
-﻿use std::cmp::Ordering;
+//! Core search algorithm for feasible mode sequences.
+//!
+//! Given one ordered chain of locations, this module finds the best
+//! travel-mode sequences that are both low-cost and feasible.
+//!
+//! "Actually possible" means the sequence respects rules like:
+//! - you can only use a vehicle if that vehicle is currently at your location
+//! - if a vehicle leaves home, it must end back at home
+//! - some outbound multimodal choices force a matching return mode later
+//!
+//! The search does not enumerate every full mode combination up front.
+//! Instead, it grows partial answers one leg at a time and always expands the
+//! cheapest partial answer first.
+//!
+//! The flow is:
+//! 1. Break one chain into smaller home-to-home segments when possible.
+//! 2. Search each segment separately.
+//! 3. Merge the best segment answers back into full-chain answers.
+//! 4. Remove the low-probability tail of the final answer list.
+//! 5. Emit one output row per retained leg.
+//!
+//! Conceptual pseudocode:
+//!
+//! ```text
+//! for each chain:
+//!   break the chain into smaller home-to-home segments
+//!
+//!   for each segment:
+//!     put one empty partial answer into a priority queue
+//!
+//!     while the queue is not empty:
+//!       take the currently cheapest partial answer
+//!
+//!       if it already covers every leg:
+//!         if all vehicles are back home:
+//!           save it as a feasible full answer
+//!         continue
+//!
+//!       look up the next leg's available modes
+//!
+//!       for each allowed mode:
+//!         update vehicle positions
+//!         update any forced future return-mode rule
+//!
+//!         if the extended partial answer is still feasible:
+//!           push it back into the queue
+//!
+//!   merge the best answers from each segment
+//!   prune the low-probability tail
+//! ```
+use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use rayon::prelude::*;
 
 use crate::errors::SearchError;
-use crate::input::LocationChain;
 use crate::index::{ModeCost, SearchIndex};
+use crate::input::LocationChain;
 use crate::output::OutputTable;
 
 const COST_RESCALE_FACTOR: f64 = 1e6;
