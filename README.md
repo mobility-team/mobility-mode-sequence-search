@@ -78,6 +78,10 @@ The implementation details are documented in the Rust source, especially
 search itself and [rust/input.rs](/d:/dev/mobility-mode-sequence-search/rust/input.rs)
 for input normalization.
 
+Before search, each input chain is closed internally by appending the starting
+location to the end. This matches the legacy Python backend, which searches a
+closed tour rather than the raw caller-provided chain.
+
 ### Pseudocode
 
 ```text
@@ -113,9 +117,9 @@ for each chain:
 
 ```python
 import polars as pl
-from mobility_mode_sequence_search import compute_subtour_mode_probabilities
+from mobility_mode_sequence_search import search_mode_sequences
 
-result = compute_subtour_mode_probabilities(
+result = search_mode_sequences(
     location_chain_steps=pl.DataFrame(...),
     leg_mode_costs=pl.DataFrame(...),
     mode_metadata=pl.DataFrame(...),
@@ -148,10 +152,14 @@ result = compute_subtour_mode_probabilities(
 
 - `mode_id: UInt16`
 - `needs_vehicle: Boolean`
-- `vehicle_id: UInt8 | null`
+- `vehicle_id: UInt8 | Utf8 | null`
 - `multimodal: Boolean`
 - `is_return_mode: Boolean`
 - `return_mode_id: UInt16 | null`
+
+At the package boundary, `vehicle_id` may be integer/null or string/null.
+String labels are normalized internally into numeric ids before the search
+runs. Mixed integer and string representations within one call are rejected.
 
 ## Output Schema
 
@@ -167,4 +175,15 @@ result = compute_subtour_mode_probabilities(
 mamba run -n mobility python -m pip install -e .[dev]
 mamba run -n mobility python -m pytest
 mamba run -n mobility python -m maturin build --release
+```
+
+## Performance Fixture
+
+A standalone synthetic performance case is available at
+[tests/perf_synthetic_case.py](/d:/dev/mobility-mode-sequence-search/tests/perf_synthetic_case.py).
+
+Example:
+
+```bash
+mamba run -n mobility python tests/perf_synthetic_case.py --n-chains 2000 --chain-len 18 --n-locations 128 --k-sequences 20
 ```

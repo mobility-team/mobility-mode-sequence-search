@@ -1,5 +1,5 @@
 from __future__ import annotations
 
-from ._core import compute_subtour_mode_probabilities
+from ._core import search_mode_sequences
 
-__all__ = ["compute_subtour_mode_probabilities"]
+__all__ = ["search_mode_sequences"]

@@ -2,15 +2,15 @@
 
 import polars as pl
 
-from mobility_mode_sequence_search import compute_subtour_mode_probabilities
+from mobility_mode_sequence_search import search_mode_sequences
 
 
 def test_keeps_multiple_sequences_for_simple_round_trip() -> None:
     location_chain_steps = pl.DataFrame(
         {
-            "dest_seq_id": [1, 1, 1],
-            "seq_step_index": [0, 1, 2],
-            "location": [10, 11, 10],
+            "dest_seq_id": [1, 1],
+            "seq_step_index": [0, 1],
+            "location": [10, 11],
         }
     )
     leg_mode_costs = pl.DataFrame(
@@ -32,7 +32,7 @@ def test_keeps_multiple_sequences_for_simple_round_trip() -> None:
         }
     )
 
-    result = compute_subtour_mode_probabilities(
+    result = search_mode_sequences(
         location_chain_steps=location_chain_steps,
         leg_mode_costs=leg_mode_costs,
         mode_metadata=mode_metadata,

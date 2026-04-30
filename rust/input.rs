@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
@@ -49,6 +51,107 @@ fn check_same_len(name: &str, expected: usize, actual: usize) -> Result<(), Sear
             "column '{name}' has length {actual}, expected {expected}"
         )))
     }
+}
+
+fn close_location_chains(chains: &mut [LocationChain]) {
+    // The legacy Python backend always searches a closed tour by appending the
+    // starting location to the end of each chain. We normalize to that shape
+    // here so the search core sees the same inputs.
+    for chain in chains {
+        let start = chain.locations[0];
+        chain.locations.push(start);
+    }
+}
+
+#[derive(Clone, Debug)]
+enum RawVehicleId {
+    Null,
+    Int(u8),
+    Label(String),
+}
+
+fn parse_vehicle_id_column(df: &Bound<'_, PyAny>) -> Result<Vec<Option<u8>>, SearchError> {
+    let series = df.call_method1("get_column", ("vehicle_id",))?;
+    let values = series.call_method0("to_list")?;
+    let values: Vec<Bound<'_, PyAny>> = values.extract()?;
+
+    let mut raw_values = Vec::with_capacity(values.len());
+    let mut saw_int = false;
+    let mut saw_label = false;
+
+    for value in values {
+        if value.is_none() {
+            raw_values.push(RawVehicleId::Null);
+            continue;
+        }
+
+        if let Ok(label) = value.extract::<String>() {
+            saw_label = true;
+            raw_values.push(RawVehicleId::Label(label));
+            continue;
+        }
+
+        if let Ok(number) = value.extract::<i64>() {
+            let vehicle_id = u8::try_from(number).map_err(|_| {
+                SearchError::InvalidSchema(
+                    "column 'vehicle_id' must contain integers in [0, 255], strings, or null".to_string(),
+                )
+            })?;
+            saw_int = true;
+            raw_values.push(RawVehicleId::Int(vehicle_id));
+            continue;
+        }
+
+        return Err(SearchError::InvalidSchema(
+            "column 'vehicle_id' must contain only integers in [0, 255], strings, or null".to_string(),
+        ));
+    }
+
+    if saw_int && saw_label {
+        return Err(SearchError::InvalidSchema(
+            "column 'vehicle_id' must use either integer ids/null or string labels/null within one call"
+                .to_string(),
+        ));
+    }
+
+    if !saw_label {
+        return Ok(raw_values
+            .into_iter()
+            .map(|value| match value {
+                RawVehicleId::Null => None,
+                RawVehicleId::Int(vehicle_id) => Some(vehicle_id),
+                RawVehicleId::Label(_) => unreachable!("mixed string/integer inputs are rejected above"),
+            })
+            .collect());
+    }
+
+    // String labels are only an ergonomic boundary feature. Normalize them
+    // here so the rest of the Rust core continues to work with numeric ids.
+    let mut label_to_id: BTreeMap<String, u8> = BTreeMap::new();
+    for value in &raw_values {
+        if let RawVehicleId::Label(label) = value {
+            if label_to_id.contains_key(label) {
+                continue;
+            }
+            let next_id = u8::try_from(label_to_id.len()).map_err(|_| {
+                SearchError::InvalidSchema(
+                    "column 'vehicle_id' contains more than 256 distinct string labels".to_string(),
+                )
+            })?;
+            label_to_id.insert(label.clone(), next_id);
+        }
+    }
+
+    Ok(raw_values
+        .into_iter()
+        .map(|value| match value {
+            RawVehicleId::Null => None,
+            RawVehicleId::Int(_) => unreachable!("mixed string/integer inputs are rejected above"),
+            RawVehicleId::Label(label) => Some(*label_to_id
+                .get(&label)
+                .expect("every parsed label must have been normalized")),
+        })
+        .collect())
 }
 
 /// Parse chain-step rows from a Python DataFrame and group them by chain.
@@ -104,6 +207,8 @@ pub fn parse_location_chains(df: &Bound<'_, PyAny>) -> Result<Vec<LocationChain>
         ));
     }
 
+    let mut chains = chains;
+    close_location_chains(&mut chains);
     Ok(chains)
 }
 
@@ -125,6 +230,8 @@ fn parse_grouped_location_chains(df: &Bound<'_, PyAny>) -> Result<Vec<LocationCh
         ));
     }
 
+    let mut chains = chains;
+    close_location_chains(&mut chains);
     Ok(chains)
 }
 
@@ -165,7 +272,7 @@ pub fn parse_leg_mode_costs(df: &Bound<'_, PyAny>) -> Result<Vec<LegModeCostRow>
 pub fn parse_mode_metadata(df: &Bound<'_, PyAny>) -> Result<Vec<ModeMetadataRow>, SearchError> {
     let mode_id: Vec<u16> = column_as_vec(df, "mode_id")?;
     let needs_vehicle: Vec<bool> = column_as_vec(df, "needs_vehicle")?;
-    let vehicle_id: Vec<Option<u8>> = column_as_vec(df, "vehicle_id")?;
+    let vehicle_id = parse_vehicle_id_column(df)?;
     let multimodal: Vec<bool> = column_as_vec(df, "multimodal")?;
     let is_return_mode: Vec<bool> = column_as_vec(df, "is_return_mode")?;
     let return_mode_id: Vec<Option<u16>> = column_as_vec(df, "return_mode_id")?;

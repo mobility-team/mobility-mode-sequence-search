@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::errors::SearchError;
 use crate::input::{LegModeCostRow, ModeMetadataRow};
@@ -60,16 +60,20 @@ impl SearchIndex {
                 });
         }
         for options in edges.values_mut() {
-            options.sort_by_key(|option| option.mode_id);
+            options.sort_by(|left, right| {
+                left.cost
+                    .total_cmp(&right.cost)
+                    .then_with(|| left.mode_id.cmp(&right.mode_id))
+            });
         }
 
         // Vehicle identifiers from Python are small external ids like 0, 1, 7.
         // We remap them into dense indexes 0..n because the search state stores
         // current vehicle locations in a Vec for speed.
         let mut vehicle_map: BTreeMap<u8, usize> = BTreeMap::new();
-        let mut seen_mode_ids: HashMap<u16, ()> = HashMap::new();
+        let mut seen_mode_ids: HashSet<u16> = HashSet::new();
         for row in &mode_metadata {
-            seen_mode_ids.insert(row.mode_id, ());
+            seen_mode_ids.insert(row.mode_id);
             if let Some(vehicle_id) = row.vehicle_id.as_ref() {
                 let next_index = vehicle_map.len();
                 vehicle_map.entry(vehicle_id.clone()).or_insert(next_index);
@@ -77,7 +81,7 @@ impl SearchIndex {
         }
 
         for mode_id in referenced_mode_ids {
-            if !seen_mode_ids.contains_key(&mode_id) {
+            if !seen_mode_ids.contains(&mode_id) {
                 return Err(SearchError::MissingMode(mode_id));
             }
         }
@@ -88,7 +92,7 @@ impl SearchIndex {
         let mut modes = vec![ModeInfo::default(); max_mode_id + 1];
         for row in mode_metadata {
             if let Some(return_mode_id) = row.return_mode_id {
-                if !seen_mode_ids.contains_key(&return_mode_id) {
+                if !seen_mode_ids.contains(&return_mode_id) {
                     return Err(SearchError::MissingMode(return_mode_id));
                 }
             }

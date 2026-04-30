@@ -7,7 +7,7 @@ use crate::index::SearchIndex;
 use crate::output::to_polars_dataframe;
 use crate::search::compute_all;
 
-/// Compute feasible subtour mode sequences for many chains at once.
+/// Search feasible mode sequences for many chains at once.
 ///
 /// The function expects long-form Polars DataFrames for the chain steps, leg
 /// mode costs, and mode metadata. It normalizes them into Rust structs, builds
@@ -19,7 +19,7 @@ use crate::search::compute_all;
 /// when the numeric parameters are invalid.
 #[pyfunction]
 #[pyo3(signature = (*, location_chain_steps, leg_mode_costs, mode_metadata, k_sequences, cumulative_prob_threshold=0.98, n_threads=None))]
-pub fn compute_subtour_mode_probabilities(
+pub fn search_mode_sequences(
     py: Python<'_>,
     location_chain_steps: &Bound<'_, PyAny>,
     leg_mode_costs: &Bound<'_, PyAny>,
@@ -60,6 +60,6 @@ pub fn compute_subtour_mode_probabilities(
 
 /// Register the Python-callable functions exposed by this extension module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(compute_subtour_mode_probabilities, m)?)?;
+    m.add_function(wrap_pyfunction!(search_mode_sequences, m)?)?;
     Ok(())
 }

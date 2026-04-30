@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def compute_subtour_mode_probabilities(
+def search_mode_sequences(
     *,
     location_chain_steps: Any,
     leg_mode_costs: Any,

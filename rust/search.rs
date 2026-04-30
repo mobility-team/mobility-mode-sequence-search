@@ -54,7 +54,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use rayon::prelude::*;
 
 use crate::errors::SearchError;
-use crate::index::{ModeCost, SearchIndex};
+use crate::index::SearchIndex;
 use crate::input::LocationChain;
 use crate::output::OutputTable;
 
@@ -79,7 +79,7 @@ struct SearchState {
     leg_idx: usize,
     vehicle_locations: Vec<u32>,
     mode_sequence: Vec<u16>,
-    return_mode_constraints: HashMap<usize, u16>,
+    return_mode_constraints: Vec<Option<u16>>,
 }
 
 // Wrapper used in the main best-first search heap.
@@ -329,6 +329,7 @@ fn search_chain_segment(
     let mut counter = 0usize;
     let mut heap = BinaryHeap::new();
     let mut results = Vec::new();
+    let empty_return_constraints = vec![None; n_legs];
 
     // Seed the heap with an empty path:
     // - no legs assigned yet
@@ -340,8 +341,8 @@ fn search_chain_segment(
         state: SearchState {
             leg_idx: 0,
             vehicle_locations: vec![locations[0]; index.n_vehicles],
-            mode_sequence: Vec::new(),
-            return_mode_constraints: HashMap::new(),
+            mode_sequence: Vec::with_capacity(n_legs),
+            return_mode_constraints: empty_return_constraints,
         },
     });
 
@@ -380,19 +381,10 @@ fn search_chain_segment(
                 destination: next_location,
             })?;
 
-        let enforced_mode = return_mode_constraints.get(&leg_idx).copied();
-        let candidate_options: Vec<&ModeCost> = match enforced_mode {
-            // Some earlier outbound leg forced a specific return mode here.
-            Some(mode_id) => options.iter().filter(|option| option.mode_id == mode_id).collect(),
-            // No forced mode: every mode available on this edge is a candidate.
-            None => options.iter().collect(),
-        };
-
-        if candidate_options.is_empty() {
-            continue;
-        }
-
-        for option in candidate_options {
+        let enforced_mode = return_mode_constraints[leg_idx];
+        let mut saw_candidate = false;
+        for option in options.iter().filter(|option| enforced_mode.is_none_or(|mode_id| option.mode_id == mode_id)) {
+            saw_candidate = true;
             let mode = index.mode(option.mode_id)?;
             let mut next_vehicle_locations = vehicle_locations.clone();
             let mut next_return_mode_constraints = return_mode_constraints.clone();
@@ -414,7 +406,7 @@ fn search_chain_segment(
                     let return_mode_id = mode.return_mode_id.ok_or(SearchError::MissingMode(option.mode_id))?;
                     // `subtour_end - 1` is the last leg before we return to the
                     // repeated location, i.e. the actual return leg.
-                    next_return_mode_constraints.insert(subtour_end - 1, return_mode_id);
+                    next_return_mode_constraints[subtour_end - 1] = Some(return_mode_id);
                 }
             }
 
@@ -434,6 +426,10 @@ fn search_chain_segment(
                     return_mode_constraints: next_return_mode_constraints,
                 },
             });
+        }
+
+        if !saw_candidate {
+            continue;
         }
 
         if results.len() >= k {
