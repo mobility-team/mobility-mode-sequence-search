@@ -190,7 +190,7 @@ Cargo.lock
 
 # End of https://www.toptal.com/developers/gitignore/api/python,rust
 
-src/mobility_mode_sequence_search/_native.pyd
+src/mobility_mode_sequence_search/*.pyd
 src/mobility_mode_sequence_search/*.pdb
 src/mobility_mode_sequence_search/__pycache__/
 tests/__pycache__/

@@ -1,6 +1,6 @@
 # mobility-mode-sequence-search
 
-Native mode-sequence search kernel for `mobility`.
+Rust mode-sequence search kernel for `mobility`.
 
 ## Scope
 

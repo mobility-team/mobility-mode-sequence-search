@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "mobility-mode-sequence-search"
 version = "0.1.0"
-description = "Native mode-sequence search kernel for mobility"
+description = "Rust mode-sequence search kernel for mobility"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
@@ -22,7 +22,7 @@ dev = [
 
 [tool.maturin]
 python-source = "src"
-module-name = "mobility_mode_sequence_search._native"
+module-name = "mobility_mode_sequence_search._core"
 features = ["pyo3/extension-module"]
 
 [tool.pytest.ini_options]
