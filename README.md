@@ -1,82 +1,45 @@
 # mobility-mode-sequence-search
 
-Rust mode-sequence search kernel for `mobility`.
+Rust package for mode-sequence search in `mobility`.
 
 ## Scope
 
-This package is intended to own:
+This package owns:
 
-- compact indexing of mode/cost data
+- compact indexing of mode and cost data
 - top-k mode-sequence search
 - chain-level parallelism
 - a Python extension API that accepts and returns columnar data
 
-The main `mobility` repository should remain responsible for orchestration, validation, and fallback Python implementations.
+The main `mobility` repository remains responsible for orchestration,
+validation, and any fallback Python implementation.
 
 ## How It Works
 
-This package answers one question:
+This package searches feasible mode sequences for an ordered chain of places.
 
-Given an ordered chain of places, what are the best feasible mode sequences?
-
-For example, if someone goes from home to a shop and back, possible answers
-could be:
+For example, if someone goes from home to a shop, feasible answers might
+include:
 
 - walk, walk
 - car outbound, car return
 - bike outbound, bike return
 
-The key word is `feasible`. The package is not only looking for low-cost
-sequences. It is also enforcing rules such as:
+Feasibility is constrained by a few simple rules:
 
-- a vehicle can only be used if it is currently where the traveler is
-- if a vehicle leaves home, it must end up back at home by the end
-- some outbound choices come in matched pairs: if the outbound leg uses one
-  mode, the corresponding return leg must use its linked return mode later in
-  the same subtour
+- a vehicle can only be used if it is currently at the traveler's location
+- if a vehicle leaves home, it must end back at home
+- some outbound choices come in matched pairs, requiring a linked return mode
+  later in the same subtour
 
 Conceptually, the algorithm has four stages:
 
-1. Split one long chain into smaller home-to-home segments when possible.
-   For example:
-   - `[home, shop, home, office, home]`
-   becomes
-   - `[home, shop, home]`
-   - `[home, office, home]`
-
-   Smaller pieces are easier to search than one long chain. The results are
-   combined again later.
-
-2. Search each segment by building answers step by step.
-   Start with an empty partial answer and repeatedly extend the cheapest
-   partial answer seen so far.
-
-   At each step, keep track of:
-   - which modes have already been chosen
-   - where each shared vehicle currently is
-   - whether a later return leg is forced to use a specific mode
-
-   If a partial answer becomes impossible, discard it immediately.
-
+1. Split long chains into smaller home-to-home segments when possible.
+2. Search each segment incrementally, always expanding the cheapest partial
+   answer first.
 3. Merge the best segment-level answers into full-chain answers.
-   This avoids searching the whole chain as one large combinatorial problem.
-
-4. Keep only the useful final answers.
-   After feasible answers have been found:
-   - sorts them from best to worst
-   - converts costs into relative probabilities
-   - keeps only the top part of the list until the requested cumulative
-     probability threshold is reached
-
-The output is therefore not every possible answer. It is the small set of best
-answers that covers most of the probability mass.
-
-### Implementation Notes
-
-The implementation details are documented in the Rust source, especially
-[rust/search.rs](/d:/dev/mobility-mode-sequence-search/rust/search.rs) for the
-search itself and [rust/input.rs](/d:/dev/mobility-mode-sequence-search/rust/input.rs)
-for input normalization.
+4. Keep only the leading answers needed to reach the requested cumulative
+   probability threshold.
 
 Before search, each input chain is closed internally by appending the starting
 location to the end. This matches the legacy Python backend, which searches a
@@ -113,6 +76,10 @@ for each chain:
   write the retained answers as output rows
 ```
 
+Implementation details are in
+[rust/search.rs](/d:/dev/mobility-mode-sequence-search/rust/search.rs) and
+[rust/input.rs](/d:/dev/mobility-mode-sequence-search/rust/input.rs).
+
 ## Python API
 
 ```python
@@ -131,24 +98,25 @@ result = search_mode_sequences(
 
 ## Input Schemas
 
-`location_chain_steps`:
+`location_chain_steps`
 
-- either grouped:
+Grouped form:
 - `dest_seq_id: UInt64`
 - `locations: List[UInt32]`
-- or long-form:
+
+Long-form:
 - `dest_seq_id: UInt64`
 - `seq_step_index: UInt32`
 - `location: UInt32`
 
-`leg_mode_costs`:
+`leg_mode_costs`
 
 - `origin: UInt32`
 - `destination: UInt32`
 - `mode_id: UInt16`
 - `cost: Float64`
 
-`mode_metadata`:
+`mode_metadata`
 
 - `mode_id: UInt16`
 - `needs_vehicle: Boolean`
@@ -158,8 +126,8 @@ result = search_mode_sequences(
 - `return_mode_id: UInt16 | null`
 
 At the package boundary, `vehicle_id` may be integer/null or string/null.
-String labels are normalized internally into numeric ids before the search
-runs. Mixed integer and string representations within one call are rejected.
+String labels are normalized internally into numeric ids before search. Mixed
+integer and string representations within one call are rejected.
 
 ## Output Schema
 
