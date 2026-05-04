@@ -148,7 +148,7 @@ mamba run -n mobility python -m maturin build --release
 ## Performance Fixture
 
 A standalone synthetic performance case is available at
-[tests/perf_synthetic_case.py](/d:/dev/mobility-mode-sequence-search/tests/perf_synthetic_case.py).
+[tests/perf_synthetic_case.py](https://github.com/mobility-team/mobility-mode-sequence-search/blob/main/tests/perf_synthetic_case.py).
 
 Example:
 
