@@ -303,6 +303,7 @@ fn collect_symmetric_subtour_return_constraints(locations: &[u32]) -> HashMap<us
 
 fn search_chain_segment(
     index: &SearchIndex,
+    utility_profile_id: u32,
     locations: &[u32],
     k: usize,
     threshold: f64,
@@ -310,7 +311,7 @@ fn search_chain_segment(
     // Fast path: a segment with exactly one leg does not need heap search.
     if locations.len() == 2 {
         let options = index
-            .edge_options(locations[0], locations[1])
+            .edge_options(utility_profile_id, locations[0], locations[1])
             .ok_or(SearchError::MissingEdge {
                 origin: locations[0],
                 destination: locations[1],
@@ -375,7 +376,7 @@ fn search_chain_segment(
         // Look up every allowed mode on this leg once. Missing edges are a hard
         // schema/data error because the search cannot continue without them.
         let options = index
-            .edge_options(current_location, next_location)
+            .edge_options(utility_profile_id, current_location, next_location)
             .ok_or(SearchError::MissingEdge {
                 origin: current_location,
                 destination: next_location,
@@ -483,7 +484,8 @@ fn search_full_chain(
     let segments = split_chain_at_home_returns(&chain.locations);
     let mut segment_results = Vec::with_capacity(segments.len());
     for segment in segments {
-        let results = search_chain_segment(index, &segment, k, threshold)?;
+        let results =
+            search_chain_segment(index, chain.utility_profile_id, &segment, k, threshold)?;
         segment_results.push(results);
     }
 
@@ -500,6 +502,7 @@ fn search_full_chain(
     for (mode_seq_index, result) in results.iter().enumerate() {
         for (leg_idx, mode_id) in result.sequence.iter().copied().enumerate() {
             output.push_row(
+                chain.utility_profile_id,
                 chain.dest_seq_id,
                 mode_seq_index as u32,
                 (leg_idx + 1) as u32,

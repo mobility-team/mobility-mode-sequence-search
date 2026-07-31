@@ -9,7 +9,7 @@ use crate::input::{LegModeCostRow, ModeMetadataRow};
 /// `modes` stores mode properties indexed by `mode_id`.
 #[derive(Clone, Debug, Default)]
 pub struct SearchIndex {
-    pub edges: HashMap<(u32, u32), Vec<ModeCost>>,
+    pub edges: HashMap<(u32, u32, u32), Vec<ModeCost>>,
     pub modes: Vec<ModeInfo>,
     pub n_vehicles: usize,
 }
@@ -48,11 +48,11 @@ impl SearchIndex {
 
         // Group every available mode by origin/destination so the search loop can
         // fetch candidate modes for one leg with a single hash lookup.
-        let mut edges: HashMap<(u32, u32), Vec<ModeCost>> = HashMap::new();
+        let mut edges: HashMap<(u32, u32, u32), Vec<ModeCost>> = HashMap::new();
         let referenced_mode_ids: Vec<u16> = leg_mode_costs.iter().map(|row| row.mode_id).collect();
         for row in leg_mode_costs {
             edges
-                .entry((row.origin, row.destination))
+                .entry((row.utility_profile_id, row.origin, row.destination))
                 .or_default()
                 .push(ModeCost {
                     mode_id: row.mode_id,
@@ -76,7 +76,7 @@ impl SearchIndex {
             seen_mode_ids.insert(row.mode_id);
             if let Some(vehicle_id) = row.vehicle_id.as_ref() {
                 let next_index = vehicle_map.len();
-                vehicle_map.entry(vehicle_id.clone()).or_insert(next_index);
+                vehicle_map.entry(*vehicle_id).or_insert(next_index);
             }
         }
 
@@ -115,8 +115,15 @@ impl SearchIndex {
     }
 
     /// Return the sorted mode options available on one origin/destination pair.
-    pub fn edge_options(&self, origin: u32, destination: u32) -> Option<&[ModeCost]> {
-        self.edges.get(&(origin, destination)).map(Vec::as_slice)
+    pub fn edge_options(
+        &self,
+        utility_profile_id: u32,
+        origin: u32,
+        destination: u32,
+    ) -> Option<&[ModeCost]> {
+        self.edges
+            .get(&(utility_profile_id, origin, destination))
+            .map(Vec::as_slice)
     }
 
     /// Return the metadata for one mode identifier.

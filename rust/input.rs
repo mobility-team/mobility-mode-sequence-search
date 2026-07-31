@@ -8,6 +8,7 @@ use crate::errors::SearchError;
 /// One grouped chain of locations, ordered by sequence step.
 #[derive(Clone, Debug)]
 pub struct LocationChain {
+    pub utility_profile_id: u32,
     pub dest_seq_id: u64,
     pub locations: Vec<u32>,
 }
@@ -15,6 +16,7 @@ pub struct LocationChain {
 /// One long-form `(origin, destination, mode, cost)` input row.
 #[derive(Clone, Debug)]
 pub struct LegModeCostRow {
+    pub utility_profile_id: u32,
     pub origin: u32,
     pub destination: u32,
     pub mode_id: u16,
@@ -173,28 +175,47 @@ pub fn parse_location_chains(df: &Bound<'_, PyAny>) -> Result<Vec<LocationChain>
         }
     }
 
+    let columns: Vec<String> = df.getattr("columns")?.extract()?;
     let dest_seq_id: Vec<u64> = column_as_vec(df, "dest_seq_id")?;
     let seq_step_index: Vec<u32> = column_as_vec(df, "seq_step_index")?;
     let location: Vec<u32> = column_as_vec(df, "location")?;
+    let utility_profile_id = if columns.iter().any(|column| column == "utility_profile_id") {
+        column_as_vec(df, "utility_profile_id")?
+    } else {
+        vec![0; dest_seq_id.len()]
+    };
 
     check_same_len("seq_step_index", dest_seq_id.len(), seq_step_index.len())?;
     check_same_len("location", dest_seq_id.len(), location.len())?;
+    check_same_len(
+        "utility_profile_id",
+        dest_seq_id.len(),
+        utility_profile_id.len(),
+    )?;
 
     // Rebuild each chain from long-form rows. Sorting by `(dest_seq_id,
     // seq_step_index)` lets callers provide rows in any order.
-    let mut rows: Vec<(u64, u32, u32)> = dest_seq_id
+    let mut rows: Vec<(u32, u64, u32, u32)> = utility_profile_id
         .into_iter()
+        .zip(dest_seq_id)
         .zip(seq_step_index)
         .zip(location)
-        .map(|((dest_seq_id, seq_step_index), location)| (dest_seq_id, seq_step_index, location))
+        .map(|(((profile_id, dest_seq_id), seq_step_index), location)| {
+            (profile_id, dest_seq_id, seq_step_index, location)
+        })
         .collect();
-    rows.sort_by_key(|row| (row.0, row.1));
+    rows.sort_by_key(|row| (row.0, row.1, row.2));
 
     let mut chains: Vec<LocationChain> = Vec::new();
-    for (dest_id, _step_index, loc) in rows {
+    for (profile_id, dest_id, _step_index, loc) in rows {
         match chains.last_mut() {
-            Some(chain) if chain.dest_seq_id == dest_id => chain.locations.push(loc),
+            Some(chain)
+                if chain.utility_profile_id == profile_id && chain.dest_seq_id == dest_id =>
+            {
+                chain.locations.push(loc)
+            }
             _ => chains.push(LocationChain {
+                utility_profile_id: profile_id,
                 dest_seq_id: dest_id,
                 locations: vec![loc],
             }),
@@ -207,21 +228,38 @@ pub fn parse_location_chains(df: &Bound<'_, PyAny>) -> Result<Vec<LocationChain>
         ));
     }
 
-    let mut chains = chains;
     close_location_chains(&mut chains);
     Ok(chains)
 }
 
 fn parse_grouped_location_chains(df: &Bound<'_, PyAny>) -> Result<Vec<LocationChain>, SearchError> {
+    let columns: Vec<String> = df.getattr("columns")?.extract()?;
     let dest_seq_id: Vec<u64> = column_as_vec(df, "dest_seq_id")?;
     let locations: Vec<Vec<u32>> = column_as_vec(df, "locations")?;
+    let utility_profile_id = if columns.iter().any(|column| column == "utility_profile_id") {
+        column_as_vec(df, "utility_profile_id")?
+    } else {
+        vec![0; dest_seq_id.len()]
+    };
 
     check_same_len("locations", dest_seq_id.len(), locations.len())?;
+    check_same_len(
+        "utility_profile_id",
+        dest_seq_id.len(),
+        utility_profile_id.len(),
+    )?;
 
-    let chains: Vec<LocationChain> = dest_seq_id
+    let mut chains: Vec<LocationChain> = utility_profile_id
         .into_iter()
+        .zip(dest_seq_id)
         .zip(locations)
-        .map(|(dest_seq_id, locations)| LocationChain { dest_seq_id, locations })
+        .map(
+            |((utility_profile_id, dest_seq_id), locations)| LocationChain {
+                utility_profile_id,
+                dest_seq_id,
+                locations,
+            },
+        )
         .collect();
 
     if chains.iter().any(|chain| chain.locations.len() < 2) {
@@ -230,7 +268,6 @@ fn parse_grouped_location_chains(df: &Bound<'_, PyAny>) -> Result<Vec<LocationCh
         ));
     }
 
-    let mut chains = chains;
     close_location_chains(&mut chains);
     Ok(chains)
 }
@@ -241,26 +278,37 @@ fn parse_grouped_location_chains(df: &Bound<'_, PyAny>) -> Result<Vec<LocationCh
 /// Returns `SearchError::InvalidSchema` if required columns are missing or have
 /// inconsistent lengths.
 pub fn parse_leg_mode_costs(df: &Bound<'_, PyAny>) -> Result<Vec<LegModeCostRow>, SearchError> {
+    let columns: Vec<String> = df.getattr("columns")?.extract()?;
     let origin: Vec<u32> = column_as_vec(df, "origin")?;
     let destination: Vec<u32> = column_as_vec(df, "destination")?;
     let mode_id: Vec<u16> = column_as_vec(df, "mode_id")?;
     let cost: Vec<f64> = column_as_vec(df, "cost")?;
+    let utility_profile_id = if columns.iter().any(|column| column == "utility_profile_id") {
+        column_as_vec(df, "utility_profile_id")?
+    } else {
+        vec![0; origin.len()]
+    };
 
     check_same_len("destination", origin.len(), destination.len())?;
     check_same_len("mode_id", origin.len(), mode_id.len())?;
     check_same_len("cost", origin.len(), cost.len())?;
+    check_same_len("utility_profile_id", origin.len(), utility_profile_id.len())?;
 
-    Ok(origin
+    Ok(utility_profile_id
         .into_iter()
+        .zip(origin)
         .zip(destination)
         .zip(mode_id)
         .zip(cost)
-        .map(|(((origin, destination), mode_id), cost)| LegModeCostRow {
-            origin,
-            destination,
-            mode_id,
-            cost,
-        })
+        .map(
+            |((((utility_profile_id, origin), destination), mode_id), cost)| LegModeCostRow {
+                utility_profile_id,
+                origin,
+                destination,
+                mode_id,
+                cost,
+            },
+        )
         .collect())
 }
 
