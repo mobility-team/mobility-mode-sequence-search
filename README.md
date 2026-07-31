@@ -101,16 +101,19 @@ result = search_mode_sequences(
 `location_chain_steps`
 
 Grouped form:
+- `utility_profile_id: UInt32` (optional, defaults to zero)
 - `dest_seq_id: UInt64`
 - `locations: List[UInt32]`
 
 Long-form:
+- `utility_profile_id: UInt32` (optional, defaults to zero)
 - `dest_seq_id: UInt64`
 - `seq_step_index: UInt32`
 - `location: UInt32`
 
 `leg_mode_costs`
 
+- `utility_profile_id: UInt32` (optional, defaults to zero)
 - `origin: UInt32`
 - `destination: UInt32`
 - `mode_id: UInt16`
@@ -129,8 +132,15 @@ At the package boundary, `vehicle_id` may be integer/null or string/null.
 String labels are normalized internally into numeric ids before search. Mixed
 integer and string representations within one call are rejected.
 
+Several utility profiles can be searched in one call. Chains read the costs
+with the same `utility_profile_id`, while mode metadata and the Rayon thread
+pool are shared across all profiles. Each referenced profile must provide the
+mode costs needed by its chains. Calls without the column keep the original
+single-profile behavior.
+
 ## Output Schema
 
+- `utility_profile_id: UInt32` (when supplied on the chains)
 - `dest_seq_id: UInt64`
 - `mode_seq_index: UInt32`
 - `seq_step_index: UInt32`

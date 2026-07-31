@@ -4,6 +4,7 @@ use pyo3::types::{PyDict, PyList};
 /// Columnar output assembled in Rust before conversion back to Polars.
 #[derive(Clone, Debug, Default)]
 pub struct OutputTable {
+    pub utility_profile_id: Vec<u32>,
     pub dest_seq_id: Vec<u64>,
     pub mode_seq_index: Vec<u32>,
     pub seq_step_index: Vec<u32>,
@@ -15,12 +16,14 @@ impl OutputTable {
     /// Append one output row.
     pub fn push_row(
         &mut self,
+        utility_profile_id: u32,
         dest_seq_id: u64,
         mode_seq_index: u32,
         seq_step_index: u32,
         location: u32,
         mode_index: u16,
     ) {
+        self.utility_profile_id.push(utility_profile_id);
         self.dest_seq_id.push(dest_seq_id);
         self.mode_seq_index.push(mode_seq_index);
         self.seq_step_index.push(seq_step_index);
@@ -30,6 +33,7 @@ impl OutputTable {
 
     /// Append all rows from another output table.
     pub fn extend(&mut self, other: Self) {
+        self.utility_profile_id.extend(other.utility_profile_id);
         self.dest_seq_id.extend(other.dest_seq_id);
         self.mode_seq_index.extend(other.mode_seq_index);
         self.seq_step_index.extend(other.seq_step_index);
@@ -39,13 +43,23 @@ impl OutputTable {
 }
 
 /// Convert the Rust output table back into a Polars DataFrame.
-pub fn to_polars_dataframe(py: Python<'_>, output: OutputTable) -> PyResult<PyObject> {
+pub fn to_polars_dataframe(
+    py: Python<'_>,
+    output: OutputTable,
+    include_utility_profile_id: bool,
+) -> PyResult<PyObject> {
     let polars = py.import("polars")?;
     let data = PyDict::new(py);
 
     // Rust keeps appending plain typed values to column buffers while it searches.
     // At the very end, we hand those columns back to Polars in one shot instead
     // of creating Python rows one by one.
+    if include_utility_profile_id {
+        data.set_item(
+            "utility_profile_id",
+            PyList::new(py, output.utility_profile_id)?,
+        )?;
+    }
     data.set_item("dest_seq_id", PyList::new(py, output.dest_seq_id)?)?;
     data.set_item("mode_seq_index", PyList::new(py, output.mode_seq_index)?)?;
     data.set_item("seq_step_index", PyList::new(py, output.seq_step_index)?)?;

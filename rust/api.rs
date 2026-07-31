@@ -43,6 +43,10 @@ pub fn search_mode_sequences(
     // Phase 1: turn Python/Polars objects into plain Rust vectors and structs.
     // Keeping Python values out of the search loop makes the rest of the code
     // much simpler and much faster.
+    let input_columns: Vec<String> = location_chain_steps.getattr("columns")?.extract()?;
+    let include_utility_profile_id = input_columns
+        .iter()
+        .any(|column| column == "utility_profile_id");
     let chains = parse_location_chains(location_chain_steps)?;
     let leg_mode_costs = parse_leg_mode_costs(leg_mode_costs)?;
     let mode_metadata = parse_mode_metadata(mode_metadata)?;
@@ -54,8 +58,14 @@ pub fn search_mode_sequences(
 
     // Phase 3: search each chain, optionally in parallel, and then convert the
     // Rust-side column buffers back into one Polars DataFrame for Python.
-    let output = compute_all(&index, &chains, k_sequences, cumulative_prob_threshold, n_threads)?;
-    to_polars_dataframe(py, output)
+    let output = compute_all(
+        &index,
+        &chains,
+        k_sequences,
+        cumulative_prob_threshold,
+        n_threads,
+    )?;
+    to_polars_dataframe(py, output, include_utility_profile_id)
 }
 
 /// Register the Python-callable functions exposed by this extension module.
