@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "mobility-mode-sequence-search"
-version = "0.1.1"
+version = "0.1.2"
 description = "Rust mode-sequence search kernel for mobility"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,7 +12,7 @@ authors = [
   { name = "Mobility Team" },
 ]
 dependencies = [
-  "polars>=1.39,<2",
+  "polars>=1.39,<3",
 ]
 
 [project.optional-dependencies]
